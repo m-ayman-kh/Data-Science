@@ -1,0 +1,684 @@
+---
+title: "FinTech Challenge"
+author: "Mohamed Khalifa"
+output:
+  pdf_document: default
+  html_document: default
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+setwd("C:/Users/hb92148/Documents/R_projects/FinTech")
+
+
+```
+
+
+###Code Structure:
+#### 1. Importing data
+#### 2. Data Manipulation
+#### 3. Feature Extraction
+#### 4. Graphs
+
+<br>
+
+
+
+
+##1. Importing data
+
+In this section, the goal is loading the dataset given for this exercise.
+
+
+```{r}
+
+# Loading libraries
+
+library(tidyverse)
+library(lubridate)
+
+
+# Importing data in proper view 
+df <- read.csv("challenge_data.csv", as.is = T, check.names = F, na.strings = "NULL")
+colnames(df) <- gsub(" ", "_", colnames(df)) 
+colnames(df) <- gsub("-", "_", colnames(df))
+colnames(df) <- tolower(colnames(df))
+
+str(df)
+
+```
+
+
+### Order data ascending by offer_creation_date column
+
+```{r}
+
+df <- df[order(df$offer_creation_date), ]
+
+```
+
+
+## Missing values
+
+```{r}
+
+data.frame(NA_Count = sort(colSums(is.na(df)) , decreasing = T ))
+
+```
+
+
+
+##2. Data Manipulation 
+
+
+### Changing ID columns 
+
+In this section, we will change id - character- columns to more user fiendly pattern for easier processing.
+The columns are in random characters format that implies no useful structure beind.
+
+<b>The characters columns to be changed:<b> <br>
+- Offer ID <br>
+- Payment Job ID <br>
+- Transfer Job ID <br>
+- User ID 
+
+```{r}
+
+## Common steps in every column reformating:
+# 1. Convert the column class from character to factor.
+# 2. Create sequence with the unique values length in every column.
+# 3. Concatenating the intial of the column name with the sequence already created.
+# 4. Returning the column class into the intial character format.
+
+
+
+# offer_id column
+
+df$offer_id <- as.factor(df$offer_id)
+levels(df$offer_id) <- paste0("o", "_", seq(length(unique(df$offer_id))))
+df$offer_id <- as.character(df$offer_id)
+
+
+# payment_job_id column
+
+df$payment_job_id <- as.factor(df$payment_job_id)
+levels(df$payment_job_id) <- paste0("p", "_", seq(length(unique(df$payment_job_id))))
+df$payment_job_id <- as.character(df$payment_job_id)
+
+
+# transfer_job_id column
+
+df$transfer_job_id <- as.factor(df$transfer_job_id)
+levels(df$transfer_job_id) <- paste0("t", "_", seq(length(unique(df$transfer_job_id))))
+df$transfer_job_id <- as.character(df$transfer_job_id)
+
+
+# user_id column
+
+df$user_id <- as.factor(df$user_id)
+levels(df$user_id) <- paste0("u", "_", seq(length(unique(df$user_id))))
+df$user_id <- as.character(df$user_id)
+
+```
+
+
+### Detecting unique values in ID columns
+
+```{r}
+
+length(unique(df$offer_id))
+length(unique(df$payment_job_id))
+length(unique(df$transfer_job_id))
+length(unique(df$user_id))
+
+```
+
+
+### Converting Date columns 
+
+In this section, we will change all Date columns from character format to POXISct format for easier processing.
+
+<b>The Date columns to be changed:<b> <br>
+01- offer_creation_date <br>
+02- offer_expiration_date <br>
+03- payment_job_creation_date <br>
+04- payment_job_closure_date <br>
+05- voucher_buying_date <br>
+06- user_registration_date <br>
+07- user_first_login <br>
+08- user_last_login <br>
+09- user_last_offer_date <br>
+10- user_first_voucher_buying_date <br>
+11- user_last_voucher_buying_date <br>
+
+```{r}
+
+date_cols <- c()  # comment_1
+
+for(i in seq(ncol(df))){
+  if ( (class(df[, i]) == "character") & (any(grepl("\\:", df[, i])) == T)){   # comment_2
+    date_cols <- c(date_cols, colnames(df[i]))
+  }
+}
+
+df[date_cols] <- lapply(df[date_cols], as.POSIXct, format= "%m/%d/%Y %H:%M")
+
+
+
+# comment_1: Create vector for all the Date columns
+# comment_2: The grepl function was used to ensure that the column is of Date type not a usual character column
+
+```
+
+
+### Converting digital columns 
+
+In this section, we will change all digits columns to numeric format for easier processing.
+
+The Date columns to be changed: <br>
+01- offer_amount <br>
+02- nominal_value <br>
+03- upside_amount <br>
+04- user_total_logins <br>
+05- user_total_emails <br>
+06- user_total_offers 
+
+```{r}
+
+
+for( i in colnames(df)){
+  if( !(i %in% c(date_cols, "offer_id", "payment_job_id", "transfer_job_id", "user_id"))){   # comment_1
+    df[ , i] <- as.numeric(df[ , i] )
+  }
+} 
+
+# comment_1: Date columns and ID -character- columns have been excluded from the loop.
+
+str(df)
+
+```
+
+
+##3. Feature Extraction
+
+###3.1 Create offer_duration column
+It's the days difference between offer_expiration_date & offer_creation_date column  column
+
+```{r}
+
+df$offer_duration <- round(difftime(df$offer_expiration_date, df$offer_creation_date, units = "days"), 1)  #comment_1
+df$offer_duration[which(df$offer_duration == 0.1)] <- 0.6  #comment_2
+
+df$offer_duration <- as.factor(df$offer_duration)
+
+
+
+#comment_1: difference is rounded for easier factorization
+#comment_2: a unique 0.1 factor has been considered as 0.6
+
+
+
+summary(as.factor(df$offer_duration))
+
+```
+
+
+###3.2 Create diff_bet_login__voucher_bought column
+
+```{r}
+# It's the days difference between user_first_voucher_buying_date & user_first_login
+
+df$diff_bet_login__voucher_bought <- round(as.numeric
+                                           (difftime(df$user_first_voucher_buying_date, df$user_first_login, units = "days")))
+
+```
+
+
+###3.3 Create offers_per_mail column
+It's the division of user_total_offers over user_total_e_mails
+
+```{r}
+
+df$offers_per_mail <- round(df$user_total_offers / df$user_total_e_mails , 1)
+
+```
+
+
+###3.4 Create offer_weekday column
+It's the weekdays of the offer_creation_date column
+
+```{r}
+
+df$offer_weekday <- wday(df$offer_creation_date, label=TRUE)
+
+```
+
+
+###3.5 Create register_weekday column
+It's the weekdays of the user_registration_date column
+
+```{r}
+
+df$register_weekday <- wday(df$user_registration_date, label=TRUE)
+
+```
+
+
+###3.6 Create offer_taken column
+It's a binary factor column for a completely transfered job. <br>
+It's validated by the presence of a transfer_job_id. <br>
+Factor (1) means that the offer has been acquired by the user. Factor (0) denotes the opposite
+
+```{r}
+
+df$offer_taken <- lapply( df$transfer_job_id, function(x) ifelse((is.na(x) == F), 1, 0))
+df$offer_taken <- as.factor(unlist(df$offer_taken))
+
+```
+
+
+###3.7 Create login_weeks column
+It's the difference in weeks between user_last_login & user_first_login
+
+```{r}
+
+df$login_weeks <- round(difftime(df$user_last_login, df$user_first_login, units = "weeks"))
+
+```
+
+
+###3.8 Create login_frequency column
+It's the division of user_total_logins over login_weeks
+
+```{r}
+
+for ( i in seq(nrow(df))){
+  if (df$login_weeks[i] != 0 ){
+    df$login_frequency[i] <- round(df$user_total_logins[i] / as.numeric(df$login_weeks[i]), 1)
+  }
+  else{
+    df$login_frequency[i] <- 0
+  }
+}
+
+```
+
+
+###3.9 Create diff_bet_1st__last_vouchers column
+
+```{r}
+# It's the days difference between user_last_voucher_buying_date & user_first_voucher_buying_date
+
+df$diff_bet_1st__last_voucher <- round(
+  as.numeric(difftime(df$user_last_voucher_buying_date, df$user_first_voucher_buying_date, units = "days")))
+
+```
+
+
+###3.10 Create diff_bet_voucher_bought__used column
+
+```{r}
+# It's the days difference between voucher_buying_date & user_first_voucher_buying_date
+
+df$diff_bet_voucher_bought__used <- round(
+  as.numeric(difftime(df$voucher_buying_date, df$user_first_voucher_buying_date, units = "days")))
+
+```
+
+
+###3.11 Create offer_percent column
+It's the division of upside_amount over nominal_value. <br>
+The column has been further processed to 10 quantiles from 10% to 100%
+
+```{r}
+
+df$offer_percent <- round(df$upside_amount / df$nominal_value, 2)
+df$offer_percent <- cut(df$offer_percent, breaks = 10, labels= 1 : 10)
+
+levels(df$offer_percent) <- seq(10, 100, 10)
+
+```
+
+
+###3.12 Create transfer_hour column
+It's extracted from the voucher_buying_date column
+
+```{r}
+
+for(i in seq(nrow(df))){
+  if(is.na(df$voucher_buying_date[i]) != T){
+    df$transfer_hour[i] <- hour(df$voucher_buying_date[i])
+    df$transfer_hour[i] <- as.numeric(df$transfer_hour[i])
+  }
+  else{
+    df$transfer_hour[i] <- NA
+  }
+}
+
+```
+
+
+###3.13 Create payment_weekday column
+It's the weekdays of the payment_job_closure_date column
+
+```{r}
+
+df$payment_weekday <- wday(df$payment_job_closure_date, label=TRUE)
+
+```
+
+
+
+### Reordering the columns
+
+```{r}
+col_names <- c("offer_id", "offer_creation_date", "offer_weekday", "offer_amount", "offer_expiration_date", 
+               "offer_duration", "payment_job_id", "payment_job_creation_date", "payment_job_closure_date", 
+               "payment_weekday", "transfer_job_id", "voucher_buying_date", "transfer_hour", 
+               "diff_bet_voucher_bought__used", "nominal_value", "upside_amount", "offer_percent", 
+               "user_id", "user_registration_date", "register_weekday", "user_first_login", "user_last_login", 
+               "login_weeks", "user_total_logins", "login_frequency", "user_total_e_mails", 
+               "user_last_offer_date", "user_total_offers", "offers_per_mail", "diff_bet_login__voucher_bought", 
+               "user_first_voucher_buying_date", "user_last_voucher_buying_date", "diff_bet_1st__last_voucher",
+               "offer_taken")
+
+df <- df[, col_names]
+
+```
+
+
+
+##4. Graphs
+
+
+###4.1 Number of users registered per month
+
+```{r}
+
+# Chronological months order
+users_reg_months <- data.frame(df %>%
+                                 group_by(months = floor_date(user_registration_date, "month"))  %>%
+                                 summarise(users_per_month = length(unique(user_id))) %>% 
+                                 mutate(months_names = c("Dec '17", "Jan", "Feb", "Mar", "Apr", "May", 
+                                                         "Jun", "Jul", "Aug", "Sep", "Oct")))
+
+
+ggplot( data = users_reg_months[which(users_reg_months$months_names != "Oct"), ],  # comment_1 
+        aes(x= fct_inorder(months_names) , y = users_per_month)
+        ) + 
+  geom_bar(stat = "identity", fill = "steelblue", width = 0.7) + 
+  labs(title = "Users Registration Count per Month", 
+       y = "Users") +
+  theme(plot.title = element_text(size = 15, hjust = 0.5),
+        axis.title.x = element_blank(), 
+        text = element_text(size = 15)) +
+  geom_text(aes(label = users_per_month), 
+            vjust = 1.6, color = "white", size = 3.5)
+
+
+
+# Descending users count per month order 
+users_reg_months <- data.frame(df %>%
+                                 group_by(months = floor_date(user_registration_date, "month"))  %>%
+                                 summarise(users_per_month = length(unique(user_id))) %>% 
+                                 mutate(months_names = c("Dec", "Jan", "Feb", "Mar", "Apr", 
+                                                         "May", "Jun", "Jul", "Aug", "Sep", "Oct"))) %>% 
+                                arrange(desc(users_per_month))
+
+
+ggplot( data = users_reg_months[which(users_reg_months$months_names != "Oct"), ], 
+        aes(x= reorder(months_names, users_per_month ), y = users_per_month)
+        ) + 
+  geom_point(size = 4, shape = 19, color = "tomato") +
+  geom_segment(aes(x = months_names, 
+                   xend = months_names, 
+                   y = 0, 
+                   yend = users_per_month), 
+               color = "steelblue", size = 1) + 
+  labs(title = "Users Registration Count per Month",
+       y = "Users") + 
+  theme(plot.title = element_text(size = 15, hjust = 0.5),
+        axis.title.y = element_blank(), 
+        text = element_text(size = 15)) + 
+  coord_flip()
+
+
+
+# Descending users count per first 9 days per month order
+users_reg_months_9days <- df %>% filter(mday(user_registration_date) < 8.5) %>% 
+  group_by(months_names = floor_date(user_registration_date, "month"))  %>% 
+  summarise(users_per_month = length(unique(user_id))) %>% 
+  mutate(months_names = c("Dec'17", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct")) %>%
+  arrange(desc(users_per_month))
+
+bars_colour <- c("steelblue", "steelblue", "steelblue", "steelblue", "steelblue", 
+                 "steelblue", "steelblue", "steelblue", "tomato", "steelblue", "steelblue")
+ggplot( data = users_reg_months_9days, 
+        aes(x= reorder(months_names, users_per_month ), y = users_per_month)
+        ) + 
+  geom_bar(stat = "identity", width = 0.7, fill = bars_colour) + 
+  labs(title = paste("Users Registration Count per Month \n (First 9 Days each Month)"),
+       y = "Users") + 
+  geom_text(aes(label = users_per_month), hjust = -0.5, size = 4.5) +
+  theme(plot.title = element_text(size = 15, hjust = 0.5),
+        axis.title.y=element_blank(), 
+        text = element_text(size = 15)) + 
+  coord_flip()
+
+
+
+# Mean registrations count for months prior to August (for presentation)
+users_reg_months %>% filter(!months_names %in% c("Aug", "Sep", "Oct")) %>% summarise(mean(users_per_month))
+
+
+# comment_1: October month will be removed because it's not complete
+
+```
+
+
+###4.2 Users offer acceptance per weekday
+
+```{r}
+
+offers_taken_per_day <- df %>% group_by(offer_weekday) %>% filter(offer_taken == 1) %>%
+  summarise(total = n()) %>% arrange(desc(total))
+offers_taken_per_day <- data.frame(offers_taken_per_day)
+
+total_offers_per_day <- df %>% group_by(offer_weekday) %>% summarise(total = n()) %>% arrange(desc(total))
+total_offers_per_day <- data.frame(total_offers_per_day); total_offers_per_day
+
+
+offers_taken_percent_per_day <- data.frame(prop.table(table(df[ , c("offer_weekday", "offer_taken")]), 1))
+offers_taken_percent_per_day$Freq <- round(offers_taken_percent_per_day$Freq, 3)
+offers_taken_percent_per_day <- offers_taken_percent_per_day[order(offers_taken_percent_per_day$Freq, decreasing = T), ]
+levels(offers_taken_percent_per_day$offer_taken) <- c("Rejected percent", "Accepted percent")
+
+offers_taken_percent_per_day <- offers_taken_percent_per_day %>% mutate(ordering = row_number())
+
+
+# total_offers per day barplot
+bars_colour <- c("steelblue", "steelblue", "steelblue", "steelblue", "steelblue", "steelblue", "tomato")
+
+ggplot(data = total_offers_per_day, 
+       aes(x = reorder(offer_weekday, -total), y = total)
+       ) +
+  geom_bar(aes( fill = "Sun"), stat = "identity", width = 0.5, color = "black", fill = bars_colour) +
+  geom_text(aes(label = total) , vjust = -0.3, size = 3.9) + 
+  labs(title = "Total offers per day",
+       x = "Weekdays") + 
+  scale_y_continuous (expand = c(0, 0), limits = c(0, 27000)) +
+  theme( plot.title = element_text(size = 16, hjust = 0.5),
+         axis.title.x = element_text(size = 11, face = "bold"),
+         axis.text.x = element_text(size = 11),
+         axis.title.y = element_blank(),
+         axis.text.y = element_text(size = 11))
+
+
+# offers_taken percent per day barplot
+bars_colour <- c("steelblue", "steelblue", "steelblue", "steelblue", "steelblue", "steelblue", "tomato",
+                 "tomato", "steelblue", "steelblue", "steelblue", "steelblue", "steelblue", "steelblue")
+
+ggplot(data = offers_taken_percent_per_day, 
+       aes(x = ordering, y = Freq)
+       ) + 
+  facet_grid(~ offer_taken, scales = "free") +
+  scale_x_continuous( breaks = offers_taken_percent_per_day$ordering, 
+                      labels = offers_taken_percent_per_day$offer_weekday) +
+  geom_bar(stat = "identity", width = 0.5, color = "black", fill = bars_colour) +
+  geom_text(aes(label = Freq) , 
+            vjust = -0.3, size = 3.5) + 
+  labs(title = "Offers acceptance percentage",
+       x = "Weekdays") + 
+  scale_y_continuous (expand = c(0, 0), limits = c(0, 1.05)) +
+  theme(plot.title = element_text(size = 16, hjust = 0.5),
+        axis.title.x = element_text(size=11, face="bold"),
+        axis.text.x = element_text(size = 10.5),
+        axis.title.y = element_blank(),
+        axis.text.y = element_text(size = 10.5), 
+        strip.text.x = element_text(size = 11.5) )
+
+```
+
+
+###4.3 Offer duration effect on offers taken
+
+```{r}
+
+prop.table(table(df[ , c("offer_duration", "offer_taken")]), 1)
+# The offer duration seems that it doesn't have huge effect on offers taken
+
+```
+
+
+###4.4 Register weekday effect on offers taken
+
+```{r}
+
+offers_taken_percent_per_reg_wday <- data.frame(prop.table(table(df[ , c("register_weekday", "offer_taken")]), 1))
+offers_taken_percent_per_reg_wday$Freq <- round(offers_taken_percent_per_reg_wday$Freq, 3)
+offers_taken_percent_per_reg_wday <- offers_taken_percent_per_reg_wday[order(offers_taken_percent_per_reg_wday$Freq, decreasing = T), ]
+
+offers_taken_percent_per_reg_wday %>% filter(offer_taken == 1) 
+
+# The registered weekday seems that it doesn't have that effect on offers taken
+```
+
+
+###4.5 Total emails per total logins effect on offers taken
+The median of total_emails & total_logins for offers taken has been plotted for optimization
+
+```{r}
+
+median_total_logins <- as.numeric(df %>% filter(offer_taken == 1 & is.na(user_total_e_mails) != T) %>% 
+                                    summarise(median(user_total_logins)))
+median_total_emails <- as.numeric(df %>% filter(offer_taken == 1 & is.na(user_total_e_mails) != T) %>% 
+                                    summarise(median(user_total_e_mails)))
+
+
+ggplot(data = df,
+       aes(x = user_total_logins, y = df$`user_total_e_mails`)
+       ) + 
+  geom_point() +
+  facet_grid(~ offer_taken) +
+  geom_point(aes(x = median_total_logins, y = median_total_emails), 
+             colour="red", size = 3) +
+  labs(title = "User Total logins vs. Total e-mails",
+       x = "Total logins",
+       y = "Total e-mails") +
+  theme(plot.title = element_text(size = 15, hjust = 0.5),
+        text = element_text(size = 15))
+
+```
+
+
+###4.6 Users most preferred transfer hour among weekdays
+
+```{r}
+
+df$payment_weekday <- factor(df$payment_weekday, levels = c("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun" ))
+
+p <- ggplot(data = df[!is.na(df$transfer_hour), ], 
+            aes(x = transfer_hour, fill = payment_weekday)
+            ) +
+  geom_density(alpha = 0.4) +
+  scale_fill_brewer(palette="Dark2") +
+  facet_grid(payment_weekday ~ .) +
+  theme(plot.title = element_text(size = 16, hjust = 0.5),
+        axis.title.x = element_text(size=11, face="bold"),
+        axis.text.x = element_text(size = 10.5),
+        axis.title.y = element_blank(),
+        axis.text.y = element_text(size = 10.5), 
+        strip.text.x = element_text(size = 11.5) )
+
+str(ggplot_build(p)$data[[1]])
+to_fill <- data_frame(
+  x = ggplot_build(p)$data[[1]]$x,
+  y = ggplot_build(p)$data[[1]]$y,
+  payment_weekday = factor(ggplot_build(p)$data[[1]]$PANEL, levels = c(1,2,3,4,5,6,7), 
+                           labels = c("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun" )))
+
+p + geom_area(data = to_fill[to_fill$y >= 0.065, ], 
+              aes(x = x, y = y), fill = "black", alpha = 0.7)
+
+
+```
+
+
+###4.7 Day time effect with offers_amount on offer taken
+Transfer hour column was converted to 3 period (morning, afternoon, and night) to study the effect
+of the offer amount on transfers behavior.
+
+```{r}
+
+for(i in seq(nrow(df))){
+  if(is.na(df$transfer_hour[i] == T) ){
+    df$offer_daytime[i] <- NA
+  }
+  else if( df$transfer_hour[i] > 5 & df$transfer_hour[i] <= 11){
+    df$offer_daytime[i] <- "morning"
+  }
+  else if (df$transfer_hour[i] > 11 & df$transfer_hour[i] <= 19){
+    df$offer_daytime[i] <- "afternoon"
+  }
+  else{
+    df$offer_daytime[i] <- "night"
+  }
+}
+
+
+ggplot(data = df[ df$offer_amount < 5000 & df$offer_taken == 1, ],
+       aes(x = offer_amount, fill = offer_daytime)
+       ) +
+  geom_density(alpha = 0.4) +
+  facet_grid(offer_daytime ~ .) 
+
+
+df$offer_daytime <- NULL
+
+
+# The transfer day time doesn't seem to have an effect on offers taken
+```
+
+
+###4.8 Duration between users first login and buying first voucher effect on offers taken
+
+```{r}
+
+ggplot( data = df[!is.na(df$diff_bet_login__voucher_bought), ], 
+        aes(x = diff_bet_login__voucher_bought, fill = fct_rev(offer_taken))) +
+  geom_density() + 
+  labs(title = "Duration bet. Users 1st login & 1st Voucher",
+       x = "Days") +
+  theme(legend.position = c(0.9, 0.67)) +
+  scale_fill_manual(values=c("green","tomato")) +
+  theme(plot.title = element_text(size = 13, hjust = 0.5),
+        axis.title.y=element_blank(), 
+        text = element_text(size = 15)) 
+
+```
+
+
+
+
